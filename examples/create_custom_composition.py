@@ -1,29 +1,7 @@
-# IXSPY AI API
-
-IXSPY AI API V1.0 official python version
-
-## README.md
-
-## Installation
-
-1. pypi install
-```BASH
-pip install ixspy-ai-api
-```
-
-2. Source code install
-```BASH
-git clone https://github.com/ixspyinc/ixspy-ai-api-python.git
-cd ixspy-ai-api-python
-python setup.py install
-```
-
-## Usage
-
-Basic usage
-```python
 import os
 import sys
+import time
+sys.path.insert(0, sys.path[0]+"/../")
 from ixspy_ai_api import ImageClient
 
 # 分步骤调用, 任务方法和参数都已约定好
@@ -47,20 +25,10 @@ result = client.wait_for_completion(task_id, poll_interval=3, timeout=180)
 print("标清图URL:", result['sd_image_url'])
 
 # 高清圖需要額外時間,這裏選擇多等待半分鐘
-print('等待半分钟后获取高清图')
 time.sleep(30)
 
 # 获取高清图
 hd_url = client.get_hd_image(task_id)
 print("高清图URL:", hd_url)
 
-```
 
-Advance use
-
-For detailed usage, please refer to the files in the /examples directory.
-
-
-
-## API document
-https://img.ixspy.com/api-doc.html
