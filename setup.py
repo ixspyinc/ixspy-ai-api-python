@@ -26,14 +26,13 @@ setup(name='ixspy-ai-api',
       license='MIT',
       keywords='',
       packages=find_packages(),
+      python_requires='>=3.8',
       install_requires=['requests >= 2'],
-      classifiers=["Programming Language :: Python :: 3.5",
-                   "Programming Language :: Python :: 3.6",
-                   "Programming Language :: Python :: 3.7",
-                   "Programming Language :: Python :: 3.8",
+      classifiers=["Programming Language :: Python :: 3.8",
                    "Programming Language :: Python :: 3.9",
                    "Programming Language :: Python :: 3.10",
                    "Programming Language :: Python :: 3.11",
                    "Programming Language :: Python :: 3.12",
-                   "Programming Language :: Python :: 3.13",]
+                   "Programming Language :: Python :: 3.13",
+                   "Programming Language :: Python :: 3.14",]
       )

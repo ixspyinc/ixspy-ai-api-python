@@ -41,6 +41,23 @@ class ImageClient(AIClient):
     # AI超清-2K
     TYPE_AI_UPSCALE_2K = 'ai_upscale_2k'
 
+    MODEL_AUTO = 'auto'
+    MODEL_GEMINI = 'gemini'
+    MODEL_CHATGPT = 'chatgpt'
+
+    SUPPORTED_MODELS = {MODEL_AUTO, MODEL_GEMINI, MODEL_CHATGPT}
+    UNSUPPORTED_MODELS_BY_TYPE = {
+        TYPE_AI_UPSCALE_2K: {MODEL_CHATGPT},
+    }
+
+    def _validate_model(self, task_type: str, model: Optional[str]) -> None:
+        if model is None:
+            return
+        if model not in self.SUPPORTED_MODELS:
+            raise ValueError("model 仅支持 'auto'、'gemini' 或 'chatgpt'")
+        if model in self.UNSUPPORTED_MODELS_BY_TYPE.get(task_type, set()):
+            raise ValueError(f"{task_type} 不支持 model={model}")
+
     # ---------- 发起作图任务（通用 + 便捷方法） ----------
     def create_task(self, task_type: str, **kwargs) -> int:
         """
@@ -54,6 +71,11 @@ class ImageClient(AIClient):
             task_id
         """
         # 预处理 original_image
+        model = kwargs.get('model')
+        self._validate_model(task_type, model)
+        if model is None:
+            kwargs.pop('model', None)
+
         if 'original_image' in kwargs:
             kwargs['original_image'] = self._prepare_images(kwargs['original_image'])
         # 预处理 reference_image（某些类型需要）
@@ -68,7 +90,8 @@ class ImageClient(AIClient):
     def create_custom_composition_multi(self,
                                         original_images: List[Union[str, Path]],
                                         prompt: str,
-                                        ratios: str = "auto") -> int:
+                                        ratios: str = "auto",
+                                        model: Optional[str] = None) -> int:
         """
         自由构图-多图（支持最多5张图片）
 
@@ -77,18 +100,17 @@ class ImageClient(AIClient):
         :param ratios: 图片比例，默认 "auto"
         :return: 任务ID
         """
-        return self.create_task(
-            ImageClient.TYPE_CUSTOM_COMPOSITION_MULTI,
-            original_image=original_images,
-            prompt=prompt,
-            ratios=ratios
-        )
+        payload = {"original_image": original_images, "prompt": prompt, "ratios": ratios}
+        if model is not None:
+            payload["model"] = model
+        return self.create_task(ImageClient.TYPE_CUSTOM_COMPOSITION_MULTI, **payload)
 
     # ----- 自由构图 -----
     def create_custom_composition(self,
                                   original_image: Union[str, Path],
                                   prompt: str,
-                                  ratios: str = "auto") -> int:
+                                  ratios: str = "auto",
+                                  model: Optional[str] = None) -> int:
         """
         自由构图
 
@@ -97,19 +119,18 @@ class ImageClient(AIClient):
         :param ratios: 图片比例，默认 "auto"
         :return: 任务ID
         """
-        return self.create_task(
-            ImageClient.TYPE_CUSTOM_COMPOSITION,
-            original_image=original_image,
-            prompt=prompt,
-            ratios=ratios
-        )
+        payload = {"original_image": original_image, "prompt": prompt, "ratios": ratios}
+        if model is not None:
+            payload["model"] = model
+        return self.create_task(ImageClient.TYPE_CUSTOM_COMPOSITION, **payload)
 
     # ----- 场景替换 -----
     def create_scene_replacement(self,
                                  original_image: Union[str, Path],
                                  ratios: str = "auto",
                                  prompt: Optional[str] = None,
-                                 reference_image: Optional[Union[str, Path]] = None) -> int:
+                                 reference_image: Optional[Union[str, Path]] = None,
+                                 model: Optional[str] = None) -> int:
         """
         场景替换（prompt 和 reference_image 至少需要有一個有值）
 
@@ -121,19 +142,22 @@ class ImageClient(AIClient):
         """
         if (prompt is None)  and (reference_image is None):
             raise ValueError("prompt 和 reference_image 不能同時爲空")
-        
+
         payload = {"original_image": original_image, "ratios": ratios}
         if prompt:
             payload["prompt"] = prompt
         if reference_image:
             payload["reference_image"] = reference_image
+        if model is not None:
+            payload["model"] = model
         return self.create_task(ImageClient.TYPE_SCENE_REPLACEMENT, **payload)
 
     # ----- 商品替换 -----
     def create_product_replacement(self,
                                    original_image: Union[str, Path],
                                    reference_image: Union[str, Path],
-                                   prompt: Optional[str] = None) -> int:
+                                   prompt: Optional[str] = None,
+                                   model: Optional[str] = None) -> int:
         """
         商品替换
 
@@ -145,12 +169,15 @@ class ImageClient(AIClient):
         payload = {"original_image": original_image, "reference_image": reference_image}
         if prompt:
             payload["prompt"] = prompt
+        if model is not None:
+            payload["model"] = model
         return self.create_task(ImageClient.TYPE_PRODUCT_REPLACEMENT, **payload)
 
     # ----- 商品换色 -----
     def create_product_recoloring(self,
                                   original_image: Union[str, Path],
-                                  color: str) -> int:
+                                  color: str,
+                                  model: Optional[str] = None) -> int:
         """
         商品换色
 
@@ -158,17 +185,17 @@ class ImageClient(AIClient):
         :param color: 目标颜色，十六进制格式（含透明度），如 "#ff4500ff"
         :return: 任务ID
         """
-        return self.create_task(
-            "product_recoloring",
-            original_image=original_image,
-            color=color
-        )
+        payload = {"original_image": original_image, "color": color}
+        if model is not None:
+            payload["model"] = model
+        return self.create_task(ImageClient.TYPE_PRODUCT_RECOLORING, **payload)
 
     # ----- 局部重绘 -----
     def create_partial_redraw(self,
                               original_image: Union[str, Path],
                               prompt: str,
-                              reference_image: Optional[Union[str, Path]] = None) -> int:
+                              reference_image: Optional[Union[str, Path]] = None,
+                              model: Optional[str] = None) -> int:
         """
         局部重绘
 
@@ -180,13 +207,16 @@ class ImageClient(AIClient):
         payload = {"original_image": original_image, "prompt": prompt}
         if reference_image:
             payload["reference_image"] = reference_image
+        if model is not None:
+            payload["model"] = model
         return self.create_task(ImageClient.TYPE_PARTIAL_REDRAW, **payload)
 
     # ----- 智能延展 -----
     def create_smart_expand(self,
                             original_image: Union[str, Path],
                             direction: str,
-                            ratios: str) -> int:
+                            ratios: str,
+                            model: Optional[str] = None) -> int:
         """
         智能延展
 
@@ -195,18 +225,17 @@ class ImageClient(AIClient):
         :param ratios: 目标比例，如 "1:1", "16:9"
         :return: 任务ID
         """
-        return self.create_task(
-            ImageClient.TYPE_SMART_EXPAND,
-            original_image=original_image,
-            direction=direction,
-            ratios=ratios
-        )
+        payload = {"original_image": original_image, "direction": direction, "ratios": ratios}
+        if model is not None:
+            payload["model"] = model
+        return self.create_task(ImageClient.TYPE_SMART_EXPAND, **payload)
 
     # ----- 图片翻译 -----
     def create_translation(self,
                            original_image: Union[str, Path],
                            source_language: str,
-                           target_language: str) -> int:
+                           target_language: str,
+                           model: Optional[str] = None) -> int:
         """
         图片翻译
 
@@ -215,12 +244,14 @@ class ImageClient(AIClient):
         :param target_language: 目标语言，如 "English"
         :return: 任务ID
         """
-        return self.create_task(
-            ImageClient.TYPE_TRANSLATION,
-            original_image=original_image,
-            source_language=source_language,
-            target_language=target_language
-        )
+        payload = {
+            "original_image": original_image,
+            "source_language": source_language,
+            "target_language": target_language,
+        }
+        if model is not None:
+            payload["model"] = model
+        return self.create_task(ImageClient.TYPE_TRANSLATION, **payload)
 
     # ----- AI 超清-2K -----
     def create_ai_upscale_2k(self, original_image: Union[str, Path]) -> int:
