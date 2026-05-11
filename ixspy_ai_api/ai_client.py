@@ -28,14 +28,14 @@ class AIClient:
 
     BASE_URL = "https://ixspy.com/ai-tool/api"
 
-    def __init__(self, api_key: str, base_url: Optional[str] = None, timeout: Optional[Union[int, float]] = 30):
+    def __init__(self, api_key: str, base_url: Optional[str] = None, timeout: Optional[Union[int, float]] = 90):
         """
         初始化基础客户端。
 
         参数:
             api_key: IXSPY 控制台获取的 API 密钥。
             base_url: 可选的自定义 API 基础地址。
-            timeout: HTTP 请求超时时间，单位为秒。传入 None 表示不设置超时。
+            timeout: HTTP 请求超时时间，单位为秒，默认 90 秒。传入 None 表示不设置超时。
         """
         self.api_key = api_key
         self.base_url = (base_url or self.BASE_URL).rstrip('/')
