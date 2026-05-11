@@ -6,7 +6,7 @@ AI 图像/视频生成 Python SDK
 """
 
 import os
-import time
+import time as time_module
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 
@@ -15,10 +15,10 @@ import requests
 
 class APIError(Exception):
     """API 调用异常"""
-    def __init__(self, code: int, message: str, time: int):
+    def __init__(self, code: int, message: str, time: Optional[int] = None):
         self.code = code
         self.message = message
-        self.time = time
+        self.time = int(time if time is not None else time_module.time())
         super().__init__(f"API Error {code}: {message}")
 
 
@@ -27,16 +27,18 @@ class AIClient:
 
     BASE_URL = "https://ixspy.com/ai-tool/api"
 
-    def __init__(self, api_key: str, base_url: Optional[str] = None):
+    def __init__(self, api_key: str, base_url: Optional[str] = None, timeout: Optional[Union[int, float]] = 30):
         """
         初始化基础客户端
 
         Args:
             api_key: API 密钥，从控制台获取
             base_url: 可选的自定义基础地址
+            timeout: HTTP 请求超时时间（秒），传 None 表示不设置超时
         """
         self.api_key = api_key
         self.base_url = (base_url or self.BASE_URL).rstrip('/')
+        self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}"
@@ -62,6 +64,9 @@ class AIClient:
         elif 'data' in kwargs and not kwargs.get('files'):
             # application/x-www-form-urlencoded
             kwargs.setdefault('headers', {})['Content-Type'] = 'application/x-www-form-urlencoded'
+
+        if self.timeout is not None:
+            kwargs.setdefault('timeout', self.timeout)
 
         response = self.session.request(method, url, **kwargs)
         try:

@@ -180,7 +180,7 @@ class ImageClient(AIClient):
         payload = {"original_image": original_image, "prompt": prompt}
         if reference_image:
             payload["reference_image"] = reference_image
-        return self.create_task(ImageClient.TYPE_PRODUCT_RECOLORING, **payload)
+        return self.create_task(ImageClient.TYPE_PARTIAL_REDRAW, **payload)
 
     # ----- 智能延展 -----
     def create_smart_expand(self,
