@@ -16,7 +16,7 @@ class ChatClient(AIClient):
     def generate(
         self,
         prompt: str,
-        original_image: Optional[List[Union[str, Path]]] = None,
+        original_image: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
     ) -> Dict[str, Any]:
         """
         创建对话生成任务。

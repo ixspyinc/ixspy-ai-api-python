@@ -344,7 +344,7 @@ class ImageClient(AIClient):
 
     def generate(self, task_type: str, wait: bool = True,
                  poll_interval: int = 3, timeout: Optional[int] = None,
-                 **params) -> Union[str, Dict[str, Any]]:
+                 **params) -> Union[int, Dict[str, Any]]:
         """
         创建图片任务，并可选择等待任务完成。
 

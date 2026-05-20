@@ -122,10 +122,11 @@ class AIClient:
         input_str = str(image_input)
         if input_str.startswith(('http://', 'https://')):
             return input_str
-        if input_str.startswith('data:image') or (len(input_str) > 100 and '/' not in input_str[:50]):
-            return self.upload_image_base64(input_str)
+
         if os.path.exists(input_str):
             return self.upload_image_file(input_str)
+        if input_str.startswith('data:image') or (len(input_str) > 100 and '/' not in input_str[:50]):
+            return self.upload_image_base64(input_str)
         # 未知格式交给服务端校验。
         return input_str
 

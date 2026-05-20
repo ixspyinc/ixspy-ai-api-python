@@ -53,7 +53,7 @@ class VideoClient(AIClient):
         """
         start_time = time.time()
         while True:
-            if time.time() - start_time > timeout:
+            if timeout and (time.time() - start_time > timeout):
                 raise APIError(-1, f"视频任务 {task_id} 轮询超时", 0)
 
             data = self.get_video_status(task_id)
