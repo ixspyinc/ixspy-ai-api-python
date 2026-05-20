@@ -5,6 +5,8 @@ IXSPY AI API 基础客户端。
 - APIError：统一的 API 异常类型。
 """
 
+import base64
+import binascii
 import os
 import time as time_module
 from typing import Dict, Any, List, Optional, Union
@@ -113,6 +115,31 @@ class AIClient:
         data = self._request('POST', '/v1/images/upload', json=payload)
         return data['url']
 
+    @staticmethod
+    def _is_base64_image_input(input_str: str) -> bool:
+        value = input_str.strip()
+        is_data_image = value.lower().startswith('data:image')
+        if is_data_image:
+            if ',' not in value:
+                return False
+            header, value = value.split(',', 1)
+            if ';base64' not in header.lower():
+                return False
+        value = ''.join(value.split())
+        if not value:
+            return False
+        if not is_data_image and len(value) <= 100:
+            return False
+        if len(value) % 4 == 1:
+            return False
+
+        try:
+            padded_value = value + ('=' * (-len(value) % 4))
+            base64.b64decode(padded_value, validate=True)
+        except (binascii.Error, ValueError):
+            return False
+        return True
+
     def _prepare_single_image(self, image_input: Union[str, Path]) -> str:
         """
         将单个图片输入标准化为 CDN URL。
@@ -125,7 +152,7 @@ class AIClient:
 
         if os.path.exists(input_str):
             return self.upload_image_file(input_str)
-        if input_str.startswith('data:image') or (len(input_str) > 100 and '/' not in input_str[:50]):
+        if self._is_base64_image_input(input_str):
             return self.upload_image_base64(input_str)
         # 未知格式交给服务端校验。
         return input_str

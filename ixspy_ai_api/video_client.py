@@ -39,14 +39,14 @@ class VideoClient(AIClient):
         endpoint = f"/v1/video/generations/tasks/{task_id}"
         return self._request('GET', endpoint)
 
-    def wait_for_video_completion(self, task_id: int, poll_interval: int = 15, timeout: int = 600) -> Dict[str, Any]:
+    def wait_for_video_completion(self, task_id: int, poll_interval: int = 15, timeout: Optional[int] = 600) -> Dict[str, Any]:
         """
         轮询视频任务，直到任务完成、失败或超时。
 
         参数:
             task_id: 视频任务 ID。
             poll_interval: 每次查询状态之间的间隔，单位为秒。默认 15 秒。
-            timeout: 最大等待时间，单位为秒。
+            timeout: 最大等待时间，单位为秒。传入 0 或 None 表示不限制。
 
         返回:
             已完成任务的数据。
@@ -62,7 +62,10 @@ class VideoClient(AIClient):
                 return data
             if status == 'error':
                 raise APIError(-1, f"视频任务 {task_id} 执行失败", 0)
-            time.sleep(poll_interval)
+            if status in ('queued', 'processing'):
+                time.sleep(poll_interval)
+            else:
+                raise APIError(-1, f"未知视频任务状态: {status}", 0)
 
     def list_video_tasks(self,
                          page: int = 1,
