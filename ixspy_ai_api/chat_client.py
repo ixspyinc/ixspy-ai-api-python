@@ -17,6 +17,8 @@ class ChatClient(AIClient):
         self,
         prompt: str,
         original_image: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        model: str = "auto",
+        model_tier: str = "Flash",
     ) -> Dict[str, Any]:
         """
         创建对话生成任务。
@@ -24,12 +26,20 @@ class ChatClient(AIClient):
         参数:
             prompt: 对话提示词。
             original_image: 可选原图列表，元素可以是本地路径、URL 或 Base64 字符串。
+            model: 模型，可选值为 auto, gemini, chatgpt，默认 auto。
+            model_tier: 模型规格，可选值为 Flash, Pro，默认 Flash。仅在 model=gemini 时生效。
 
         返回:
             响应数据，通常包含任务或生成内容相关字段。
         """
         endpoint = "/v1/chat/generations"
-        payload: Dict[str, Any] = {"prompt": prompt}
+        payload: Dict[str, Any] = {
+            "prompt": prompt,
+            "model": model,
+        }
+        
+        if model == "gemini":
+            payload["model_tier"] = model_tier
 
         if original_image is not None:
             payload["original_image"] = self._prepare_images(original_image)

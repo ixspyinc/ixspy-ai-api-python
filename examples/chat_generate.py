@@ -11,12 +11,21 @@ FOLDER_PATH = os.path.dirname(os.path.abspath(sys.argv[0])) + os.sep
 original_image_path = FOLDER_PATH + 'images/demo_result_generate.png'
 
 client = ChatClient(api_key=API_KEY)
-
-# result = client.generate(prompt="用 Python 写一个快速排序")
+'''
+# 基础文字对话
+result = client.generate(
+    prompt="Hello world!",
+    model="gemini",
+    model_tier="Pro"
+)
 # print(result)
+'''
 
+# 图文识别
 result = client.generate(
     prompt="描述图片内容",
-    original_image=original_image_path
+    original_image=original_image_path,
+    model="chatgpt"
 )
+
 print(result)

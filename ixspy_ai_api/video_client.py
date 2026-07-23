@@ -4,6 +4,8 @@ IXSPY AI 视频生成客户端。
 VideoClient 提供视频任务创建、任务轮询和任务列表查询能力。
 """
 
+import os
+import sys
 import time
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
@@ -14,23 +16,63 @@ class VideoClient(AIClient):
     """IXSPY AI 视频生成 API 客户端。"""
 
     def create_video(self,
-                     original_images: List[Union[str, Path]],
-                     prompt: str) -> int:
+                     prompt: str,
+                     reference_image: Optional[Union[List[Union[str, Path]], str, Path]] = None,
+                     first_frame: Optional[Union[str, Path]] = None,
+                     last_frame: Optional[Union[str, Path]] = None,
+                     ratios: Optional[str] = None) -> int:
         """
         创建视频生成任务。
 
         参数:
-            original_images: 原图列表，元素可以是本地路径、URL 或 Base64 字符串。
-            prompt: 视频画面描述。
+            prompt: 视频画面描述。需详细描述图片中角色、物品的互动、风格、材质及场景背景。
+            reference_image: 参考图数组，最多支持 3 张图。支持本地路径、URL 或 Base64 字符串。建议优先使用通过「图片上传」接口获取的 URL。
+            first_frame: 首帧图，仅支持 1 张。支持本地路径、URL 或 Base64 字符串。
+            last_frame: 尾帧图，仅支持 1 张。如传入该字段，则必须同时传入 first_frame。
+            ratios: 视频比例。可选值：'16:9'、'9:16'。
 
         返回:
             任务 ID。
         """
-        prepared_images = self._prepare_images(original_images)
+        total_images = 0
+        ref_images_list = []
+        
+        if reference_image:
+            if isinstance(reference_image, (list, tuple)):
+                ref_images_list = list(reference_image)
+            else:
+                ref_images_list = [reference_image]
+            total_images += len(ref_images_list)
+            
+        if first_frame:
+            total_images += 1
+            
+        if last_frame:
+            if not first_frame:
+                raise ValueError("如果传入 last_frame (尾帧图)，则必须同时传入 first_frame (首帧图)。")
+            total_images += 1
+            
+        if total_images > 3:
+            raise ValueError(f"图片总数(reference_image, first_frame, last_frame)不能超过 3 张，当前传入 {total_images} 张。")
+            
+        if ratios and ratios not in ('16:9', '9:16'):
+            raise ValueError("ratios 参数仅支持 '16:9' 或 '9:16'。")
+
         payload = {
-            "original_image": prepared_images,
             "prompt": prompt
         }
+        
+        if ref_images_list:
+            payload["reference_image"] = self._prepare_images(ref_images_list)
+        if first_frame:
+            prepared_first = self._prepare_images(first_frame)
+            payload["first_frame"] = prepared_first[0] if isinstance(prepared_first, list) else prepared_first
+        if last_frame:
+            prepared_last = self._prepare_images(last_frame)
+            payload["last_frame"] = prepared_last[0] if isinstance(prepared_last, list) else prepared_last
+        if ratios:
+            payload["ratios"] = ratios
+
         data = self._request('POST', '/v1/video/generations', json=payload)
         return int(data['task_id'])
 

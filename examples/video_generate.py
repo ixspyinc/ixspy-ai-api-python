@@ -13,8 +13,9 @@ original_image_path = FOLDER_PATH + 'images/demo_result_generate.png'
 client = VideoClient(api_key=API_KEY)
 
 video_task_id = client.create_video(
-    original_images=original_image_path,
-    prompt="基于图片场景制作展示视频"
+    reference_image=original_image_path,
+    prompt="生成产品展示视频",
+    ratios="16:9"
 )
 
 print("视频任务 ID:", video_task_id)
