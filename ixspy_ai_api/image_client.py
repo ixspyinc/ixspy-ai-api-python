@@ -74,9 +74,13 @@ class ImageClient(AIClient):
         if model is None:
             kwargs.pop('model', None)
 
-        if 'original_image' in kwargs:
+        if kwargs.get('original_image') is None:
+            kwargs.pop('original_image', None)
+        elif 'original_image' in kwargs:
             kwargs['original_image'] = self._prepare_images(kwargs['original_image'])
-        if 'reference_image' in kwargs:
+        if kwargs.get('reference_image') is None:
+            kwargs.pop('reference_image', None)
+        elif 'reference_image' in kwargs:
             kwargs['reference_image'] = self._prepare_single_image(kwargs['reference_image'])
 
         endpoint = f"/v1/images/generations/{task_type}"
@@ -84,15 +88,15 @@ class ImageClient(AIClient):
         return int(data['task_id'])
 
     def create_custom_composition_multi(self,
-                                        original_images: List[Union[str, Path]],
-                                        prompt: str,
+                                        original_images: Optional[List[Union[str, Path]]] = None,
+                                        prompt: Optional[str] = None,
                                         ratios: str = "auto",
                                         model: Optional[str] = None) -> int:
         """
         创建多图自由构图任务。
 
         参数:
-            original_images: 原图列表，元素可以是本地路径、URL 或 Base64 字符串。
+            original_images: 可选原图列表，元素可以是本地路径、URL 或 Base64 字符串。
             prompt: 图片生成描述。
             ratios: 输出图片比例，默认 "auto"。
             model: 可选模型名："auto"、"gemini" 或 "chatgpt"。
@@ -100,21 +104,26 @@ class ImageClient(AIClient):
         返回:
             任务 ID。
         """
-        payload = {"original_image": original_images, "prompt": prompt, "ratios": ratios}
+        if prompt is None:
+            raise ValueError("prompt 不能为空")
+
+        payload = {"prompt": prompt, "ratios": ratios}
+        if original_images:
+            payload["original_image"] = original_images
         if model is not None:
             payload["model"] = model
         return self.create_task(ImageClient.TYPE_CUSTOM_COMPOSITION_MULTI, **payload)
 
     def create_custom_composition(self,
-                                  original_image: Union[str, Path],
-                                  prompt: str,
+                                  original_image: Optional[Union[str, Path]] = None,
+                                  prompt: Optional[str] = None,
                                   ratios: str = "auto",
                                   model: Optional[str] = None) -> int:
         """
         创建自由构图任务。
 
         参数:
-            original_image: 原图路径、URL 或 Base64 字符串。
+            original_image: 可选原图路径、URL 或 Base64 字符串。
             prompt: 图片生成描述。
             ratios: 输出图片比例，默认 "auto"。
             model: 可选模型名："auto"、"gemini" 或 "chatgpt"。
@@ -122,7 +131,12 @@ class ImageClient(AIClient):
         返回:
             任务 ID。
         """
-        payload = {"original_image": original_image, "prompt": prompt, "ratios": ratios}
+        if prompt is None:
+            raise ValueError("prompt 不能为空")
+
+        payload = {"prompt": prompt, "ratios": ratios}
+        if original_image is not None:
+            payload["original_image"] = original_image
         if model is not None:
             payload["model"] = model
         return self.create_task(ImageClient.TYPE_CUSTOM_COMPOSITION, **payload)

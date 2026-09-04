@@ -49,7 +49,15 @@ hd_url = client.get_hd_image(task_id)
 print("高清图 URL:", hd_url)
 ```
 
-更多示例请参考 `examples` 目录。
+更多示例请参考 `examples` 目录：
+
+- `create_custom_composition.py`：分步骤创建单图自由构图任务、轮询结果并获取高清图。
+- `create_custom_composition_multi.py`：分步骤创建多图自由构图任务，使用多张输入图完成组合生成。
+- `create_custom_composition_text_only.py`：创建无参考图自由构图任务，仅通过文字描述生成图片。
+- `image_generate.py`：使用 `ImageClient.generate()` 一步式创建图片任务并等待完成。
+- `video_generate.py`：使用参考图创建图片生成视频任务，并查询已完成视频任务列表。
+- `video_generate_text_only.py`：创建纯文字生成视频任务，无需输入图片。
+- `chat_generate.py`：创建对话生成任务，演示文字对话和图文识别用法。
 
 ## 任务生命周期
 
