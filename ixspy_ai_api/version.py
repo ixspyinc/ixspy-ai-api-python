@@ -75,19 +75,24 @@ def _version_from_metadata(*, strict: bool = False) -> str:
     except (OSError, ValueError) as exc:
         _version_problem("源码包 PKG-INFO", exc, strict)
         metadata = None
-    if metadata is not None and metadata.get("Name", "").lower().replace("_", "-") == DISTRIBUTION_NAME:
+    # 源码树里带着本发行版的元数据 ⇒ 这是从 sdist 构建，而不是一次仓库检出。
+    is_sdist = (metadata is not None
+                and metadata.get("Name", "").lower().replace("_", "-") == DISTRIBUTION_NAME)
+    if metadata is not None and is_sdist:
         raw = metadata.get("Version")
-        # 缺失或空 Version 不作为版本候选；运行时继续查询已安装元数据，构建期直接失败。
+        # 缺失或空 Version 不作为版本候选。
         if raw and raw.strip():
             candidate = _normalize_candidate(raw, "源码包 Version 字段", strict)
             if candidate is not None:
                 return candidate
-    if strict:
-        # 构建期不接受构建机上安装的发行版版本：它不是"正在打包的这份源码"的版本，
-        # 一旦 PKG-INFO 缺失或没有 Version 字段，采用它就会打出错误版本号的包。
-        # 合法构建应来自环境变量、Git 标签或 sdist 的 PKG-INFO，否则应当硬失败。
+    if strict and is_sdist:
+        # 从 sdist 重建：版本必须来自环境变量、Git 标签或 PKG-INFO，绝不采用构建机上
+        # 安装的发行版版本 —— 它不是"这份源码"的版本，一旦采用就会打出错误版本号的包。
+        #
+        # 条件里用 is_sdist 而不是"读不到 PKG-INFO"：仓库检出（没有 PKG-INFO）与 sdist
+        # 不同，此时并没有任何"这份源码的版本"可用，沿用已安装版本仍是合理行为。
         raise ValueError(
-            "构建期无法确定版本：环境变量、Git 标签与源码包 PKG-INFO 均未提供有效版本，"
+            "从源码包构建时无法确定版本：源码包的 PKG-INFO 未提供有效版本，"
             "拒绝使用构建机上已安装的发行版版本"
         )
     try:
@@ -97,6 +102,9 @@ def _version_from_metadata(*, strict: bool = False) -> str:
     try:
         raw = version(DISTRIBUTION_NAME)
     except PackageNotFoundError:
+        # 走到这里说明环境变量、Git 标签与 PKG-INFO 都不可用，构建机上也没有安装过本包。
+        # 构建期在此硬失败会连"干净环境里构建仓库检出"都无法完成，因此与运行时一致地
+        # 回退到占位版本；发布流程依靠 Git 标签或 IXSPY_AI_API_VERSION 提供真实版本。
         return FALLBACK_VERSION
     except Exception as exc:
         _version_problem("已安装发行版元数据", exc, strict)

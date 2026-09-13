@@ -14,13 +14,45 @@ VERSION_MODULE = Path(__file__).resolve().parents[1] / "ixspy_ai_api" / "version
 
 
 @pytest.mark.parametrize("content", ["Name: ixspy-ai-api\n", "Name: ixspy-ai-api\nVersion:\n"])
-def test_missing_sdist_version_rejected_at_build(content):
-    """构建期不得采用构建机上安装的发行版版本，否则会打出错误版本号的包。"""
+def test_incomplete_sdist_refused_at_build(content):
+    """源码树带着发行包元数据却没有可用版本号时，构建期不得改用构建机上的已安装版本。"""
     with patch.dict(os.environ, {}, clear=True), patch("pathlib.Path.read_text", return_value=content), \
             patch("importlib.metadata.version", return_value="1.1.2") as installed:
-        with pytest.raises(ValueError, match="构建期无法确定版本"):
+        with pytest.raises(ValueError, match="从源码包构建时无法确定版本"):
             get_build_version()
         installed.assert_not_called()
+
+
+def test_repo_checkout_without_pkg_info_still_builds(monkeypatch):
+    """仓库检出没有 PKG-INFO（如 pip 的隔离构建拷贝），沿用已安装版本仍属合理行为。"""
+    real_open = Path.open
+
+    def open_without_pkg_info(self, *args, **kwargs):
+        if self.name == "PKG-INFO":
+            raise FileNotFoundError(str(self))
+        return real_open(self, *args, **kwargs)
+
+    with patch.dict(os.environ, {}, clear=True), \
+            patch("pathlib.Path.open", open_without_pkg_info), \
+            patch("importlib.metadata.version", return_value="1.1.2"):
+        assert get_build_version() == "1.1.2"
+
+
+def test_clean_environment_build_without_any_version_source():
+    """干净环境（无环境变量、无 Git 标签、无 PKG-INFO、未安装）仍应能构建。"""
+    real_open = Path.open
+
+    def open_without_pkg_info(self, *args, **kwargs):
+        if self.name == "PKG-INFO":
+            raise FileNotFoundError(str(self))
+        return real_open(self, *args, **kwargs)
+
+    from importlib.metadata import PackageNotFoundError
+
+    with patch.dict(os.environ, {}, clear=True), \
+            patch("pathlib.Path.open", open_without_pkg_info), \
+            patch("importlib.metadata.version", side_effect=PackageNotFoundError("absent")):
+        assert get_build_version() == "0.0.0"
 
 
 def test_missing_sdist_version_still_falls_back_at_runtime():
