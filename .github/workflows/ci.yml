@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+
+      - name: Run unit tests
+        run: python -m pytest -q
+
+  minimum-dependencies:
+    name: Minimum supported dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - name: Install minimum runtime dependencies
+        run: python -m pip install -e . "requests==2.25.0" "urllib3==1.26.0" "packaging==20.0" pytest
+      - name: Run unit tests
+        run: python -m pytest -q
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install ruff
+        run: python -m pip install ruff
+
+      - name: Ruff check
+        run: python -m ruff check .
+
+  types:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install declared development dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Mypy
+        run: python -m mypy ixspy_ai_api
+
+  build:
+    name: Build distributions
+    env:
+      IXSPY_AI_API_VERSION: 0.0.0.dev${{ github.run_number }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Verify version metadata is not a placeholder
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert wheels, "未生成 wheel"
+          with zipfile.ZipFile(wheels[0]) as archive:
+              metadata_name = [n for n in archive.namelist() if n.endswith("METADATA")][0]
+              content = archive.read(metadata_name).decode()
+          version_line = [line for line in content.splitlines() if line.startswith("Version:")][0]
+          version = version_line.split(":", 1)[1].strip()
+          print(f"wheel 版本: {version}")
+          assert version and version != "0.0.0", f"版本号无效: {version!r}"
+          PY
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/

@@ -1,27 +1,45 @@
-import os
-import sys
-import time
+"""自由构图无参考图示例（纯文生图）。
 
-sys.path.insert(0, sys.path[0] + "/../")
-from ixspy_ai_api import ImageClient
+运行方式：
 
-# 自由构图无参考图示例。
+    export IXSPY_API_KEY="你的密钥"
+    python examples/create_custom_composition_text_only.py
+"""
 
-API_KEY = 'YOUR_KEY'
+from _common import require_api_key
 
-client = ImageClient(api_key=API_KEY)
+from ixspy_ai_api import APIError, ImageClient, TaskFailedError, TaskTimeoutError
 
-task_id = client.create_custom_composition(
-    prompt="生成一张白色背景的现代桌面音箱产品图，电商主图风格",
-)
-print(f"任务 ID: {task_id}")
 
-result = client.wait_for_completion(task_id, poll_interval=3, timeout=180)
+def main() -> None:
+    client = ImageClient(api_key=require_api_key())
 
-print("标清图 URL:", result['sd_image_url'])
+    task_id = client.create_custom_composition(
+        prompt="生成一张白色背景的现代桌面音箱产品图，电商主图风格",
+    )
+    print(f"任务 ID: {task_id}")
 
-# 高清图可能需要在任务完成后继续等待一小段处理时间。
-time.sleep(30)
+    try:
+        result = client.wait_for_completion(task_id, poll_interval=3, timeout=180)
+    except TaskTimeoutError as exc:
+        print(f"等待超时: {exc}")
+        return
+    except TaskFailedError as exc:
+        print(f"任务失败: {exc}")
+        return
+    except APIError as exc:
+        print(f"接口调用失败: {exc}")
+        return
 
-hd_url = client.get_hd_image(task_id)
-print("高清图 URL:", hd_url)
+    print("标清图 URL:", result.get("sd_image_url"))
+
+    try:
+        hd_url = client.wait_for_hd_image(task_id, poll_interval=5, timeout=180)
+    except (TaskTimeoutError, TaskFailedError, APIError) as exc:
+        print(f"高清图获取失败（标清图已可用）: {exc}")
+        return
+    print("高清图 URL:", hd_url)
+
+
+if __name__ == "__main__":
+    main()

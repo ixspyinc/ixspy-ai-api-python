@@ -26,11 +26,38 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+
+      - name: Run unit tests before publishing
+        run: python -m pytest -q
+
       - name: Build release distributions
         run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
+          python -m pip install --upgrade build
           python -m build
+
+      - name: Verify version metadata is not a placeholder
+        run: |
+          python - <<'PY'
+          import glob
+          import os
+          from ixspy_ai_api.version import normalize_version
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert wheels, "未生成 wheel"
+          with zipfile.ZipFile(wheels[0]) as archive:
+              metadata_name = [n for n in archive.namelist() if n.endswith("METADATA")][0]
+              content = archive.read(metadata_name).decode()
+          version_line = [line for line in content.splitlines() if line.startswith("Version:")][0]
+          version = version_line.split(":", 1)[1].strip()
+          print(f"wheel 版本: {version}")
+          assert version == normalize_version(os.environ["GITHUB_REF"]), "版本与发布标签不一致"
+          assert version and version != "0.0.0", f"版本号无效: {version!r}"
+          PY
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -51,11 +78,11 @@ jobs:
     environment:
       name: pypi
       # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      # url: https://pypi.org/p/YOURPROJECT
+      # url: https://pypi.org/p/ixspy-ai-api
       #
       # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
       # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+      # url: https://pypi.org/project/ixspy-ai-api/${{ github.event.release.name }}
 
     steps:
       - name: Retrieve release distributions

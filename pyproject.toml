@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=64", "packaging>=20"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ixspy-ai-api"
+description = "IXSPY AI API 官方 Python SDK（图片 / 视频 / 对话生成）"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "IXSPY Team", email = "tech@ixspy.com" }]
+keywords = ["ixspy", "ai", "image-generation", "video-generation", "sdk"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = ["requests>=2.25", "urllib3>=1.26", "packaging>=20"]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/ixspyinc/ixspy-ai-api-python"
+Documentation = "https://img.ixspy.com/api-doc.html"
+Repository = "https://github.com/ixspyinc/ixspy-ai-api-python"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "ruff>=0.5",
+    # mypy 1.15+ 移除了对 Python 3.8 目标的支持，加下界上界以匹配 requires-python。
+    "mypy>=1.8,<1.15",
+    "types-requests",
+    "build>=1.0",
+]
+
+[tool.setuptools]
+packages = ["ixspy_ai_api"]
+
+[tool.setuptools.package-data]
+ixspy_ai_api = ["py.typed"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ixspy_ai_api.version.__version__" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+extend-exclude = [".dsh-tools", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",  # 行长由 formatter 之外的历史代码风格决定，中文注释较难折行
+]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["E402"]  # 示例需要先插入 sys.path 再导入
+
+[tool.mypy]
+python_version = "3.8"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
