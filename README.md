@@ -193,11 +193,19 @@ python -m build           # 打包校验
 ```
 
 版本号以 `ixspy_ai_api/version.py` 为唯一来源，`pyproject.toml` 通过
-`[tool.setuptools.dynamic]` 读取它，因此不会出现两处版本不一致的问题。
+`[tool.setuptools.dynamic]` 调用 `get_build_version()` 严格解析它。
 
 普通 CI 使用 `0.0.0.dev<运行编号>` 构建；发布版本从 Git 标签读取，并校验
 wheel 版本与标签一致。`v1.2.3rc1` 会保留为 `1.2.3rc1`，非法发布标签会报错。
 本地需要指定构建版本时，可设置环境变量 `IXSPY_AI_API_VERSION`。
+
+运行时导入使用容错模式：非法环境版本或损坏的元数据会触发 `RuntimeWarning`，
+并依次尝试其他版本来源，最后回退到 `0.0.0`。`PKG-INFO` 使用 UTF-8 替换解码，
+缺少 `Version` 字段时继续查询已安装元数据；构建期遇到非法候选版本会直接失败。
+
+版本模块并非零依赖：构建和运行时均使用 `packaging>=20`，以复用完整的 PEP 440
+解析和规范化规则，避免自行维护容易误截断预发布后缀的正则。20.x 提供所用的
+`Version`/`release` 接口，并兼容项目支持的 Python 3.8。
 
 轮询会在每次查询前后检查期限，并将剩余时间用于连接、读取超时以及重试等待。
 同步网络调用无法强制中断所有底层操作（例如 DNS 解析或持续缓慢返回的响应体），

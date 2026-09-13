@@ -101,6 +101,7 @@ class TestVersionResolution(unittest.TestCase):
         for key in env_backup:
             os.environ.pop(key, None)
         os.environ["GITHUB_REF_NAME"] = "main"
+        os.environ["GITHUB_REF"] = "refs/heads/main"
         try:
             self.assertEqual(get_version(), version_module._version_from_metadata())
         finally:
@@ -110,8 +111,8 @@ class TestVersionResolution(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
-    def test_version_module_has_no_third_party_imports(self):
-        """构建后端会导入该模块，因此它必须保持零依赖。"""
+    def test_version_module_does_not_import_http_or_build_backend(self):
+        """构建时仅依赖声明的 packaging，不应导入 HTTP 客户端或 setuptools。"""
         source = Path(version_module.__file__).read_text(encoding="utf-8")
         for forbidden in ("import requests", "from requests", "import setuptools"):
             self.assertNotIn(forbidden, source)

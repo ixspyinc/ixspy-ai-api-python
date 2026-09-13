@@ -1,4 +1,5 @@
 [build-system]
+# packaging 负责 PEP 440 解析；20.x 兼容 Python 3.8，构建和运行时都直接使用。
 requires = ["setuptools>=64", "packaging>=20"]
 build-backend = "setuptools.build_meta"
 
@@ -48,7 +49,7 @@ packages = ["ixspy_ai_api"]
 ixspy_ai_api = ["py.typed"]
 
 [tool.setuptools.dynamic]
-version = { attr = "ixspy_ai_api.version.__version__" }
+version = { attr = "ixspy_ai_api.version.get_build_version" }
 
 [tool.ruff]
 line-length = 120

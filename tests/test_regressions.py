@@ -133,14 +133,13 @@ def test_ci_development_version_and_release_tag():
     with patch.dict(os.environ, {"GITHUB_REF": "refs/tags/v1.2.3rc1"}, clear=True):
         assert get_version() == "1.2.3rc1"
     with patch.dict(os.environ, {"GITHUB_REF": "refs/tags/v1.2.3-broken"}, clear=True), pytest.raises(ValueError):
-        get_version()
+        get_version(strict=True)
 
 
-def test_sdist_version_wins_over_installed_package(tmp_path):
-    source = tmp_path / "ixspy_ai_api"
-    source.mkdir()
-    (tmp_path / "PKG-INFO").write_text("Name: ixspy-ai-api\nVersion: 1.2.3rc1\n", encoding="utf-8")
+def test_sdist_version_wins_over_installed_package():
     with patch.dict(os.environ, {}, clear=True), \
-            patch("ixspy_ai_api.version.__file__", str(source / "version.py")), \
-            patch("importlib.metadata.version", return_value="1.1.2"):
+            patch("pathlib.Path.read_text", return_value="Name: ixspy-ai-api\nVersion: 1.2.3rc1\n") as read, \
+            patch("importlib.metadata.version", return_value="1.1.2") as installed:
         assert get_version() == "1.2.3rc1"
+        read.assert_called_once_with(encoding="utf-8", errors="replace")
+        installed.assert_not_called()
