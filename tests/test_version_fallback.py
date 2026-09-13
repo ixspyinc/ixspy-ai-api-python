@@ -14,11 +14,20 @@ VERSION_MODULE = Path(__file__).resolve().parents[1] / "ixspy_ai_api" / "version
 
 
 @pytest.mark.parametrize("content", ["Name: ixspy-ai-api\n", "Name: ixspy-ai-api\nVersion:\n"])
-def test_missing_sdist_version_falls_back(content):
+def test_missing_sdist_version_rejected_at_build(content):
+    """构建期不得采用构建机上安装的发行版版本，否则会打出错误版本号的包。"""
     with patch.dict(os.environ, {}, clear=True), patch("pathlib.Path.read_text", return_value=content), \
+            patch("importlib.metadata.version", return_value="1.1.2") as installed:
+        with pytest.raises(ValueError, match="构建期无法确定版本"):
+            get_build_version()
+        installed.assert_not_called()
+
+
+def test_missing_sdist_version_still_falls_back_at_runtime():
+    with patch.dict(os.environ, {}, clear=True), \
+            patch("pathlib.Path.read_text", return_value="Name: ixspy-ai-api\n"), \
             patch("importlib.metadata.version", return_value="1.1.2"):
         assert get_version() == "1.1.2"
-        assert get_build_version() == "1.1.2"
 
 
 @pytest.mark.parametrize("failure", [PermissionError("denied"), OSError("read failed")])

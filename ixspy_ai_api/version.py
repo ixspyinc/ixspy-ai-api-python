@@ -9,7 +9,10 @@
    会把旧版本号打进新的发行包。
 3. 源码发行包的 ``PKG-INFO``（从 sdist 重建时保留原版本）。
 4. 已安装发行版的元数据（``pip install`` 后的运行时场景）。
-5. 兜底 ``0.0.0``（源码目录直接运行、未安装且无环境变量时）。
+
+第 4 步**只在运行时生效**：构建期（``get_build_version``）不接受构建机上安装的
+发行版版本，否则 sdist 的 ``PKG-INFO`` 一旦缺失或没有 ``Version`` 字段，就会把
+构建机上的旧版本号打进新发行包。构建期无有效候选时直接硬失败。
 
 构建后端调用 get_build_version，非法版本会硬失败；运行时 get_version 默认
 对损坏的来源发出 RuntimeWarning 并继续回退，不让版本信息阻断 SDK 导入。
@@ -74,11 +77,19 @@ def _version_from_metadata(*, strict: bool = False) -> str:
         metadata = None
     if metadata is not None and metadata.get("Name", "").lower().replace("_", "-") == DISTRIBUTION_NAME:
         raw = metadata.get("Version")
-        # 缺失或空 Version 不作为版本候选，继续查询已安装元数据。
+        # 缺失或空 Version 不作为版本候选；运行时继续查询已安装元数据，构建期直接失败。
         if raw and raw.strip():
             candidate = _normalize_candidate(raw, "源码包 Version 字段", strict)
             if candidate is not None:
                 return candidate
+    if strict:
+        # 构建期不接受构建机上安装的发行版版本：它不是"正在打包的这份源码"的版本，
+        # 一旦 PKG-INFO 缺失或没有 Version 字段，采用它就会打出错误版本号的包。
+        # 合法构建应来自环境变量、Git 标签或 sdist 的 PKG-INFO，否则应当硬失败。
+        raise ValueError(
+            "构建期无法确定版本：环境变量、Git 标签与源码包 PKG-INFO 均未提供有效版本，"
+            "拒绝使用构建机上已安装的发行版版本"
+        )
     try:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover - Python < 3.8
