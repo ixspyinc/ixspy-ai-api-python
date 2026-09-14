@@ -1,16 +1,60 @@
 """Regression coverage for polling deadlines and release metadata."""
 
+import http.client
 import io
 import os
+from typing import Dict, Optional
 from unittest.mock import patch
 
 import pytest
+import urllib3
 from urllib3.response import HTTPResponse
 
 from ixspy_ai_api import ImageClient, TaskTimeoutError, VideoClient, wait_for_task
 from ixspy_ai_api.ai_client import _DeadlineRetry, _DeadlineTimeout, _polling_budget
 from ixspy_ai_api.version import get_version
 from tests.fakes import FakeSession
+
+# ``_make_request`` 的返回值契约在两个大版本间不同：1.x 返回 httplib 响应，由
+# ``urlopen`` 经 ``from_httplib`` 转换；2.x 直接返回 ``HTTPResponse``。下面的
+# 假响应按当前版本给出对应的形态，从而在两种依赖下都跑通真实的 retry 栈。
+_URLLIB3_MAJOR = int(urllib3.__version__.split(".", 1)[0])
+
+
+class _FakeSocketBuffer(io.BytesIO):
+    """容忍重复关闭；``http.client.HTTPResponse`` 的终结器会在 fp 已关闭后再 flush。"""
+
+    def flush(self) -> None:
+        if not self.closed:
+            super().flush()
+
+
+class _FakeSocket:
+    """只提供 ``http.client`` 需要的 ``makefile``。"""
+
+    def __init__(self, payload: bytes):
+        self._payload = _FakeSocketBuffer(payload)
+
+    def makefile(self, *args, **kwargs):
+        return self._payload
+
+
+def _raw_http_response(body: bytes, status: int, headers: Optional[Dict[str, str]] = None) -> http.client.HTTPResponse:
+    """按 urllib3 1.x 的契约构造 httplib 响应对象（含 ``msg`` 头对象）。"""
+    lines = [f"HTTP/1.1 {status} {http.client.responses.get(status, 'Unknown')}"]
+    lines.extend(f"{name}: {value}" for name, value in (headers or {}).items())
+    lines.append(f"Content-Length: {len(body)}")
+    raw = ("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1") + body
+    response = http.client.HTTPResponse(_FakeSocket(raw))
+    response.begin()
+    return response
+
+
+def _stub_response(body: bytes, status: int, headers: Optional[Dict[str, str]] = None):
+    """构造当前 urllib3 版本下 ``HTTPConnectionPool._make_request`` 的返回值。"""
+    if _URLLIB3_MAJOR < 2:
+        return _raw_http_response(body, status, headers)
+    return HTTPResponse(body=io.BytesIO(body), status=status, headers=headers or {}, preload_content=False)
 
 
 @pytest.fixture
@@ -83,9 +127,8 @@ def test_real_http_stack_only_retries_upload_posts(clock, upload, expected_calls
     from ixspy_ai_api import ServerError
 
     responses = [
-        HTTPResponse(body=io.BytesIO(b"failed"), status=503, preload_content=False),
-        HTTPResponse(body=io.BytesIO(b'{"error":{"code":0},"data":{"url":"https://cdn.example/a"}}'),
-                     status=200, preload_content=False),
+        _stub_response(b"failed", 503),
+        _stub_response(b'{"error":{"code":0},"data":{"url":"https://cdn.example/a"}}', 200),
     ]
     with ImageClient("dummy", base_url="http://example.invalid") as client:
         client.session.trust_env = False
@@ -99,8 +142,7 @@ def test_real_http_stack_only_retries_upload_posts(clock, upload, expected_calls
 
 
 def test_real_http_stack_stops_retry_after_at_deadline(clock):
-    response = HTTPResponse(body=io.BytesIO(b"busy"), status=429,
-                            headers={"Retry-After": "120"}, preload_content=False)
+    response = _stub_response(b"busy", 429, {"Retry-After": "120"})
     with ImageClient("dummy", base_url="http://example.invalid") as client:
         client.session.trust_env = False
         with patch("urllib3.connectionpool.HTTPConnectionPool._make_request", return_value=response) as send:
