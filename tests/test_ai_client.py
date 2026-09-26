@@ -178,6 +178,14 @@ class TestResponseEnvelope(unittest.TestCase):
         with self.assertRaises(APIResponseError):
             self.client._request("GET", "/x")
 
+    def test_malformed_error_fields_are_response_errors(self):
+        for error in (None, {}, {"code": "bad"}, {"code": True},
+                      {"code": 123, "time": "bad"}, {"code": 123, "time": float('nan')}):
+            with self.subTest(error=error):
+                self.session.enqueue_json({"error": error, "data": {}})
+                with self.assertRaises(APIResponseError):
+                    self.client._request("GET", "/x")
+
 
 class TestHttpStatusMapping(unittest.TestCase):
     """旧实现完全不看 HTTP 状态码，429/401/5xx 都会退化成“响应不是合法 JSON”。"""

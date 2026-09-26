@@ -28,6 +28,7 @@ import base64
 import binascii
 import json
 import logging
+import math
 import os
 import time
 import warnings
@@ -94,6 +95,7 @@ RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 _DATA_URI_PREFIX = "data:"
 _IMAGE_MIME_PREFIX = "image/"
+_BASE64_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
 
 
 # --------------------------------------------------------------------------- #
@@ -219,6 +221,15 @@ def _remaining_poll_time() -> Optional[float]:
     return remaining
 
 
+def _validate_polling_options(poll_interval: float, timeout: Optional[Union[int, float]]) -> None:
+    """在开始轮询（或创建待轮询任务）前校验等待参数。"""
+    for name, value in (("poll_interval", poll_interval), ("timeout", timeout)):
+        if value is None and name == "timeout":
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name} 必须是非负的有限秒数，当前: {value!r}")
+
+
 @contextmanager
 def _polling_budget(timeout: Optional[Union[int, float]], task_id: int, label: str) -> Iterator[None]:
     previous = _poll_deadline.get()
@@ -294,12 +305,13 @@ def _strip_data_uri(value: str) -> Tuple[str, Optional[str]]:
     return payload.strip(), mime_type
 
 
-def _looks_like_base64_image(value: str) -> bool:
+def _looks_like_base64_image(value: str, max_upload_bytes: Optional[int] = None) -> bool:
     """判断字符串是否像 Base64 编码的图片数据。
 
     仅返回 ``True`` 的情况：带 ``data:image`` 前缀且声明 base64，或长度达到
     图片量级的裸 Base64 串。判定刻意保守——误判会把无效内容发往服务端，而漏判
-    只会让服务端返回更明确的错误。
+    只会让服务端返回更明确的错误。超出上传上限时仅检查字母表，随后在上传入口
+    拒绝，避免为超限数据分配解码缓冲区。
     """
     stripped = value.strip()
     if not stripped:
@@ -320,7 +332,24 @@ def _looks_like_base64_image(value: str) -> bool:
     # 裸 Base64：图片数据必然远长于一般字符串，用长度先过滤噪声。
     if len(stripped) < 256:
         return False
+    if max_upload_bytes and _estimated_base64_size(stripped) > max_upload_bytes:
+        # 超限输入只需确认其字母表看起来像 Base64；上传入口会直接拒绝，
+        # 无需先解码整张图片来完成类型判别。
+        return all(char in _BASE64_CHARACTERS or char.isspace() for char in stripped)
     return _decodes_as_base64(stripped)
+
+
+def _estimated_base64_size(value: str) -> int:
+    """不分配解码缓冲区，计算 Base64 载荷对应的字节数。"""
+    compact_length = sum(not char.isspace() for char in value)
+    end = len(value) - 1
+    while end >= 0 and value[end].isspace():
+        end -= 1
+    padding = 0
+    while end >= 0 and value[end] == '=':
+        padding += 1
+        end -= 1
+    return max(0, compact_length * 3 // 4 - min(padding, 2))
 
 
 def _decodes_as_base64(value: str) -> bool:
@@ -400,15 +429,18 @@ def wait_for_task(
         TaskTimeoutError: 超过 ``timeout`` 秒仍未结束。
         APIError: 返回了未知状态。
     """
-    if poll_interval is not None and poll_interval < 0:
-        raise ValueError(f"poll_interval 不能为负数，当前: {poll_interval}")
-    if timeout is not None and timeout < 0:
-        raise ValueError(f"timeout 不能为负数，当前: {timeout}")
+    _validate_polling_options(poll_interval, timeout)
 
     with _polling_budget(timeout, task_id, task_label):
         while True:
             _remaining_poll_time()
-            data: Any = fetch_status()
+            try:
+                data: Any = fetch_status()
+            except APIError as exc:
+                if exc.task_id is None:
+                    exc.task_id = task_id
+                    exc.args = (exc._format(),)
+                raise
             remaining = _remaining_poll_time()
             status = data.get('status')
             if status == TASK_STATUS_COMPLETED:
@@ -602,19 +634,35 @@ class AIClient:
                 http_status=status_code,
             )
 
-        error = payload.get('error') or {}
+        error = payload.get('error')
         if not isinstance(error, dict):
             raise APIResponseError(
                 message=f"'error' 字段不是对象（{method} {url}），实际类型: {type(error).__name__}",
                 http_status=status_code,
             )
 
-        code = error.get('code', APIError.default_code)
+        code = error.get('code')
+        if isinstance(code, bool) or not isinstance(code, int):
+            raise APIResponseError(
+                message=f"'error.code' 不是整数（{method} {url}）: {code!r}",
+                http_status=status_code,
+            )
         if code != 0:
+            error_time = error.get('time')
+            if error_time is not None:
+                try:
+                    parsed_time = float(error_time)
+                except (TypeError, ValueError, OverflowError):
+                    parsed_time = float('nan')
+                if not math.isfinite(parsed_time):
+                    raise APIResponseError(
+                        message=f"'error.time' 不是有效时间戳（{method} {url}）: {error_time!r}",
+                        http_status=status_code,
+                    )
             raise APIError(
                 code=code,
                 message=error.get('message') or LOCAL_ERROR_CODES.get(code, '未知错误'),
-                time=error.get('time'),
+                time=error_time,
                 http_status=status_code,
             )
 
@@ -727,12 +775,23 @@ class AIClient:
     @classmethod
     def _require_int(cls, data: "MappingLike", field: str, context: str) -> int:
         value = cls._require_field(data, field, context)
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise APIResponseError(message=f"{context} 的字段 {field!r} 不是正整数: {value!r}")
         try:
-            return int(value)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped.isascii() or not stripped.isdigit():
+                    raise ValueError("不是整数字符串")
+                parsed = int(stripped)
+            else:
+                parsed = value
         except (TypeError, ValueError):
             raise APIResponseError(
-                message=f"{context} 的字段 {field!r} 不是整数: {value!r}",
+                message=f"{context} 的字段 {field!r} 不是正整数: {value!r}",
             ) from None
+        if parsed < 1:
+            raise APIResponseError(message=f"{context} 的字段 {field!r} 不是正整数: {value!r}")
+        return parsed
 
     # -- 图片输入归一化 ------------------------------------------------------ #
 
@@ -775,9 +834,11 @@ class AIClient:
         if os.path.isfile(value):
             return self._load_local_image(value)
 
-        if _looks_like_base64_image(value):
-            payload, _mime = _strip_data_uri(value) if value.lower().startswith(_DATA_URI_PREFIX) else (value, None)
-            return self.upload_image_base64(payload)
+        if value.lower().startswith(_DATA_URI_PREFIX):
+            return self.upload_image_base64(value)
+
+        if _looks_like_base64_image(value, self.max_upload_bytes):
+            return self.upload_image_base64(value)
 
         if _looks_like_local_path(value):
             raise FileNotFoundError(
@@ -794,14 +855,14 @@ class AIClient:
         path = Path(file_path)
         if not path.is_file():
             raise FileNotFoundError(f"图片文件不存在: {str(path)!r}")
-        if self.max_upload_bytes:
-            size = path.stat().st_size
-            if size > self.max_upload_bytes:
-                raise ValueError(
-                    f"图片体积 {size / 1024 / 1024:.1f} MiB 超过上限 "
-                    f"{self.max_upload_bytes / 1024 / 1024:.1f} MiB: {str(path)!r}"
-                )
         return self.upload_image_file(path)
+
+    def _check_upload_size(self, size: int, description: str) -> None:
+        if self.max_upload_bytes and size > self.max_upload_bytes:
+            raise ValueError(
+                f"图片体积 {size / 1024 / 1024:.1f} MiB 超过上限 "
+                f"{self.max_upload_bytes / 1024 / 1024:.1f} MiB: {description}"
+            )
 
     def _prepare_images(self, images: ImageInputs) -> Union[str, List[str]]:
         """归一化单张图片或图片列表，保持输入形状。
@@ -836,6 +897,7 @@ class AIClient:
         path = Path(file_path)
         if not path.is_file():
             raise FileNotFoundError(f"图片文件不存在: {str(path)!r}")
+        self._check_upload_size(path.stat().st_size, repr(str(path)))
 
         filename = path.name
         with path.open('rb') as handle:
@@ -857,9 +919,15 @@ class AIClient:
             raise ValueError("base64_str 不能为空")
         payload_str = base64_str.strip()
         if payload_str.lower().startswith(_DATA_URI_PREFIX):
-            payload_str, _mime = _strip_data_uri(payload_str)
+            payload_str, mime_type = _strip_data_uri(payload_str)
+            if mime_type is not None and not mime_type.startswith(_IMAGE_MIME_PREFIX):
+                raise ValueError(f"data URI 必须是图片 MIME 类型，当前: {mime_type!r}")
         if not payload_str:
             raise ValueError("Base64 载荷为空")
+
+        self._check_upload_size(_estimated_base64_size(payload_str), "Base64 图片")
+        if not _decodes_as_base64(payload_str):
+            raise ValueError("Base64 图片载荷无效")
 
         data = self._request('POST', '/v1/images/upload', _upload=True, json={"image_base64": payload_str})
         return self._require_field(data, 'url', '上传 Base64 图片')

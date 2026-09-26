@@ -13,6 +13,7 @@ from .ai_client import (
     AIClient,
     ImageInput,
     TaskFailedError,
+    _validate_polling_options,
     wait_for_task,
 )
 from .types import (
@@ -237,6 +238,8 @@ class ImageClient(AIClient):
 
         self._drop_unset_optional_fields(spec, kwargs)
         self._validate_required(task_type, spec, kwargs)
+        if task_type == self.TYPE_SCENE_REPLACEMENT and not (kwargs.get('prompt') or kwargs.get('reference_image')):
+            raise ValueError("prompt 和 reference_image 不能同时为空")
 
         # 文本参数统一走共享校验，消除 `if prompt is None` 与 `if prompt:` 的差异。
         if kwargs.get('prompt') is not None:
@@ -329,8 +332,6 @@ class ImageClient(AIClient):
         返回:
             任务 ID。
         """
-        if prompt is None and reference_image is None:
-            raise ValueError("prompt 和 reference_image 不能同时为空")
         return self.create_task(
             self.TYPE_SCENE_REPLACEMENT,
             original_image=original_image,
@@ -607,6 +608,8 @@ class ImageClient(AIClient):
             ``wait=False`` 时返回任务 ID（``int``）；否则返回完成后的任务数据，
             其中额外包含 ``task_id`` 字段。
         """
+        if wait:
+            _validate_polling_options(poll_interval, timeout)
         task_id = self.create_task(task_type, **params)
         if not wait:
             return task_id

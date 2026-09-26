@@ -10,11 +10,13 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ixspy_ai_api import (  # noqa: E402
     DEFAULT_WAIT_TIMEOUT,
+    APIConnectionError,
     APIError,
     APIResponseError,
     ImageClient,
@@ -112,6 +114,13 @@ class TestCreateTaskValidation(ImageClientTestCase):
     def test_string_task_id_coerced_to_int(self):
         self.session.enqueue_envelope({"task_id": "42"})
         self.assertEqual(self.client.create_task("custom_composition", prompt="x"), 42)
+
+    def test_invalid_task_ids_are_rejected_without_coercion(self):
+        for task_id in (42.9, True, 0, -3, "42.9", "abc"):
+            with self.subTest(task_id=task_id):
+                self.session.enqueue_envelope({"task_id": task_id})
+                with self.assertRaises(APIResponseError):
+                    self.client.create_task("custom_composition", prompt="x")
 
     def test_endpoint_uses_task_type(self):
         self.session.enqueue_envelope({"task_id": 1})
@@ -233,6 +242,15 @@ class TestPayloadConstruction(ImageClientTestCase):
         with self.assertRaises(ValueError) as ctx:
             self.client.create_scene_replacement("https://cdn.example.com/a.png")
         self.assertIn("prompt", str(ctx.exception))
+
+    def test_scene_replacement_invariant_applies_to_generic_entry_point(self):
+        for invoke in (
+            lambda: self.client.create_scene_replacement("https://cdn.example.com/a.png", prompt=""),
+            lambda: self.client.create_task("scene_replacement", original_image="https://cdn.example.com/a.png"),
+        ):
+            with self.assertRaises(ValueError):
+                invoke()
+        self.assertEqual(self.session.call_count, 0)
 
     def test_scene_replacement_accepts_reference_only(self):
         self.session.enqueue_envelope({"task_id": 1})
@@ -379,6 +397,21 @@ class TestGenerate(ImageClientTestCase):
         with self.assertRaises(ValueError):
             self.client.generate("custom_composition", prompt="")
         self.assertEqual(self.session.call_count, 0)
+
+    def test_generate_rejects_invalid_polling_before_creating_task(self):
+        for options in ({"poll_interval": -1}, {"timeout": -1}, {"poll_interval": float('nan')},
+                        {"timeout": float('inf')}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.client.generate("custom_composition", prompt="x", **options)
+        self.assertEqual(self.session.call_count, 0)
+
+    def test_generate_polling_error_preserves_created_task_id(self):
+        self.session.enqueue_envelope({"task_id": 74})
+        with patch.object(self.client, "get_task_status", side_effect=APIConnectionError(message="network")), \
+                self.assertRaises(APIConnectionError) as ctx:
+            self.client.generate("custom_composition", prompt="x")
+        self.assertEqual(ctx.exception.task_id, 74)
+        self.assertIn("task 74", str(ctx.exception))
 
 
 class TestHdImage(ImageClientTestCase):

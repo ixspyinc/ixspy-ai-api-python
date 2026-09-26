@@ -14,6 +14,7 @@ import base64
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -158,6 +159,20 @@ class TestPrepareSingleImage(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.client._prepare_single_image(value)
 
+    def test_invalid_data_uris_report_value_error(self):
+        for value in ("data:image/png;base64", "data:image/png;base64,not-base64!",
+                      "data:text/plain;base64,aGVsbG8="):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.client._prepare_single_image(value)
+        self.assertEqual(self.session.call_count, 0)
+
+    def test_oversized_raw_base64_is_rejected_without_decoding(self):
+        self.client.max_upload_bytes = 1
+        with patch("ixspy_ai_api.ai_client._decodes_as_base64", side_effect=AssertionError("decoded oversized input")), \
+                self.assertRaises(ValueError):
+            self.client._prepare_single_image(PNG_BASE64)
+        self.assertEqual(self.session.call_count, 0)
+
     def test_non_string_input_rejected(self):
         with self.assertRaises(TypeError):
             self.client._prepare_single_image(123)  # type: ignore[arg-type]
@@ -211,6 +226,23 @@ class TestUploadImageBase64(unittest.TestCase):
         files = self.session.last_call["files"]
         self.assertIn("image", files)
         self.assertNotIn("Content-Type", self.session.last_call.get("headers", {}))
+
+    def test_direct_file_upload_obeys_size_limit(self):
+        self.client.max_upload_bytes = 1
+        with self.assertRaises(ValueError):
+            self.client.upload_image_file(EXISTING_FILE)
+        self.assertEqual(self.session.call_count, 0)
+
+    def test_base64_upload_obeys_decoded_size_limit(self):
+        self.client.max_upload_bytes = len(PNG_BYTES) - 1
+        with self.assertRaises(ValueError):
+            self.client.upload_image_base64(PNG_BASE64)
+        self.assertEqual(self.session.call_count, 0)
+
+        self.client.max_upload_bytes = len(PNG_BYTES)
+        self.session.enqueue_envelope({"url": "https://cdn.example.com/a.png"})
+        self.client.upload_image_base64(PNG_BASE64)
+        self.assertEqual(self.session.call_count, 1)
 
     def test_upload_missing_file_raises_before_request(self):
         with self.assertRaises(FileNotFoundError):
